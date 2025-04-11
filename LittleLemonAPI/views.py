@@ -8,6 +8,7 @@ from rest_framework.permissions import IsAdminUser, AllowAny
 from .models import MenuItem
 from .serializers import MenuItemSerializer, CategorySerializer
 from django.core.exceptions import ObjectDoesNotExist
+from rest_framework.permissions import BasePermission
 
 
 #view to create menu items
@@ -73,7 +74,7 @@ class AssignGroupView(APIView):
 
 
 
-# view to remove user to Managers group
+# view to remove user from Managers group
 class RemoveGroupView(APIView):
     permission_classes = [IsAdminUser]  # Checks if the user is an admin
 
@@ -92,3 +93,56 @@ class RemoveGroupView(APIView):
 
         # If the user is not in the 'Managers' group
         return Response({'message': "User not found in the managers group"}, status=status.HTTP_404_NOT_FOUND)
+
+
+
+# Custom permission to check if the user is in the 'Managers' group.
+class IsManager(BasePermission):
+    def has_permission(self, request, view):
+        return request.user.groups.filter(name='Managers').exists()
+
+
+
+# view to add user to delivery group by manager
+class AssignDeliveryView(APIView):
+    permission_classes = [IsManager] # Checks if the user is an manager
+
+    def post(self, request):
+        try:
+            # Get the 'Delivery Crew' group
+            delivery_group = Group.objects.get(name='Delivery Crew')
+        except ObjectDoesNotExist:
+            return Response({'message': "Delivery group does not exist"}, status=status.HTTP_404_NOT_FOUND)
+
+        # Check if the user is already in the 'Delivery Crew' group
+        if request.user.groups.filter(name='Delivery Crew').exists():
+            return Response({'message': "User is already in the Delivery Crew group"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Add the user to the 'Delivery Crew' group
+        request.user.groups.add(delivery_group)
+
+        # Return a success response
+        return Response({'message': "User successfully added to the Delivery Crew group"}, status=status.HTTP_200_OK)
+
+
+
+# view to remove user from delivery group
+class RemoveDeliveryView(APIView):
+    permission_classes = [IsManager]  # Checks if the user is an manager
+
+    def post(self, request):
+        try:
+            # Get the 'Delivery' group
+            delivery_group = Group.objects.get(name='Delivery Crew')
+        except ObjectDoesNotExist:
+            return Response({'message': "Delivery group does not exist"}, status=status.HTTP_404_NOT_FOUND)
+
+        # Check if the user is in the 'Delivery' group
+        if request.user.groups.filter(name='Delivery Crew').exists():
+            # Remove the user from the 'Delivery' group
+            request.user.groups.remove(delivery_group)
+            return Response({'message': "User removed from Delivery group"}, status=status.HTTP_200_OK)
+
+        # If the user is not in the 'Delivery' group
+        return Response({'message': "User not found in the Delivery group"}, status=status.HTTP_404_NOT_FOUND)
+
