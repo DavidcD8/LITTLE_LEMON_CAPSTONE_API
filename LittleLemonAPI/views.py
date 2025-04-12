@@ -11,8 +11,11 @@ from django.core.exceptions import ObjectDoesNotExist
 from rest_framework.permissions import BasePermission
 
 
+
+
 #view to create menu items
 class CreateMenuItemView(APIView):
+    permission_classes = [IsAdminUser] # checks if the user is admin
     def post(self, request):
         serializer = MenuItemSerializer(data=request.data)
         if serializer.is_valid():
@@ -21,22 +24,61 @@ class CreateMenuItemView(APIView):
 
 
 #view to render menu items
-class MenuItemList(APIView):
-    permission_classes = [IsAdminUser] # checks if the user is admin
+class MenuItemListView(APIView):
+    permission_classes = [AllowAny]  # Allow everyone to access this view
+
     def get(self, request):
-        menu_items = MenuItem.objects.all()  # Fetch all menu items
-        if menu_items.exists():  # Check if there are any items
-            serializer = MenuItemSerializer(menu_items, many=True)
-            return Response(serializer.data, status.HTTP_200_OK)  # Return the serialized data with 200 status
-        else:
-            return Response({"detail": "No menu items found."}, status=status.HTTP_404_NOT_FOUND)
+        items = MenuItem.objects.all()
+        category_name = request.query_params.get('category')
+        to_price = request.query_params.get('to_price')
+        search = request.query_params.get('search')
+
+        if category_name:
+            items = items.filter(category__title=category_name)
+        if to_price:
+            items = items.filter(price__lte=to_price)
+        if search:
+            items = items.filter(title__icontains=search)
+
+        serializer = MenuItemSerializer(items, many=True)
+        return Response(serializer.data, status.HTTP_200_OK)
+
+    def post(self, request):
+        return Response(
+            {"detail": "You do not have permission to perform this action."},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    def put(self, request, *args, **kwargs):
+        return Response(
+            {"detail": "You do not have permission to perform this action."},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    def patch(self, request, *args, **kwargs):
+        return Response(
+            {"detail": "You do not have permission to perform this action."},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    def delete(self, request, *args, **kwargs):
+        return Response(
+            {"detail": "You do not have permission to perform this action."},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+
+
 
 
 # View to create categories
 class CreateCategory(generics.ListCreateAPIView):
     permission_classes = [IsAdminUser] # checks if the user is admin
-    queryset =  Category.objects.all() # Fetch all categories
-    serializer_class = CategorySerializer
+    def post(self, request):
+        serializer = CategorySerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+        return Response(serializer.data,status.HTTP_201_CREATED )
 
 
 # View to render categories
@@ -50,6 +92,7 @@ class CategoryListView(APIView):
             return Response(serializer.data, status=status.HTTP_200_OK)  # Return serialized data with 200 status
         else:
             return Response({"detail": "No categories found."}, status=status.HTTP_404_NOT_FOUND)  # Adjust error message for categories
+
 
 
 # view to add user to Managers group
@@ -78,7 +121,7 @@ class AssignGroupView(APIView):
 class RemoveGroupView(APIView):
     permission_classes = [IsAdminUser]  # Checks if the user is an admin
 
-    def post(self, request):
+    def delete(self, request):
         try:
             # Get the 'Managers' group
             manager_group = Group.objects.get(name='Managers')
@@ -130,7 +173,7 @@ class AssignDeliveryView(APIView):
 class RemoveDeliveryView(APIView):
     permission_classes = [IsManager]  # Checks if the user is an manager
 
-    def post(self, request):
+    def delete(self, request):
         try:
             # Get the 'Delivery' group
             delivery_group = Group.objects.get(name='Delivery Crew')
