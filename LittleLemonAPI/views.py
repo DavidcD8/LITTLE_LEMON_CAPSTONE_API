@@ -12,47 +12,36 @@ from rest_framework.permissions import BasePermission
 
 
 
+# view to prevent unwanted actions
+class DenyUnsafeMethodsMixin:
+    def post(self, request, *args, **kwargs):
+        return self.permission_denied_response()
 
-#view to create menu items
-class CreateMenuItemView(APIView):
-    permission_classes = [IsAdminUser] # checks if the user is admin
-    def post(self, request):
-        serializer = MenuItemSerializer(data=request.data)
-        if serializer.is_valid():
-            serializer.save()
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    def put(self, request, *args, **kwargs):
+        return self.permission_denied_response()
 
+    def patch(self, request, *args, **kwargs):
+        return self.permission_denied_response()
 
+    def delete(self, request, *args, **kwargs):
+        return self.permission_denied_response()
 
-# Renders one item only
-class SingleMenuItemView(APIView):
-    permission_classes = [AllowAny]  # Allow access without authentication
-
-    def get(self, request, pk):
-        try:
-            item = MenuItem.objects.get(pk=pk) # Get the item
-        except ObjectDoesNotExist:
-            return Response({'message': "The item does not exist"}, status=status.HTTP_404_NOT_FOUND)
+    def permission_denied_response(self):
+        return Response(
+            {"detail": "You do not have permission to perform this action."},
+            status=status.HTTP_403_FORBIDDEN
+        )
 
 
-        category_name = request.query_params.get('category')
-        to_price = request.query_params.get('to_price')
-        search = request.query_params.get('search')
-
-        if category_name:
-            item = item.filter(category__title=category_name)
-        if to_price:
-            item = item.filter(price__lte=to_price)
-        if search:
-            item = item.filter(title__icontains=search)
-
-        serializer = MenuItemSerializer(item)
-        return Response(serializer.data, status.HTTP_200_OK)
-
+# Custom permission to check if the user is in the 'Managers' group.
+class IsManager(BasePermission):
+    def has_permission(self, request, view):
+        return request.user.groups.filter(name='Managers').exists()
+ 
 
 
 #view to render menu items
-class MenuItemListView(APIView):
+class MenuItemListView(APIView,DenyUnsafeMethodsMixin):
     permission_classes = [AllowAny]  # Allow everyone to access this view
 
     def get(self, request):
@@ -72,28 +61,38 @@ class MenuItemListView(APIView):
         return Response(serializer.data, status.HTTP_200_OK)
 
     def post(self, request):
-        return Response(
-            {"detail": "You do not have permission to perform this action."},
-            status=status.HTTP_403_FORBIDDEN
-        )
+        if IsManager().has_permission(request, self) or IsAdminUser().has_permission(request, self):
+            serializer = MenuItemSerializer(data=request.data)
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response({"detail": "You do not have permission to perform this action."}, status=status.HTTP_403_FORBIDDEN)
 
-    def put(self, request):
-        return Response(
-            {"detail": "You do not have permission to perform this action."},
-            status=status.HTTP_403_FORBIDDEN
-        )
 
-    def patch(self, request):
-        return Response(
-            {"detail": "You do not have permission to perform this action."},
-            status=status.HTTP_403_FORBIDDEN
-        )
 
-    def delete(self, request):
-        return Response(
-            {"detail": "You do not have permission to perform this action."},
-            status=status.HTTP_403_FORBIDDEN
-        )
+# Renders one item only
+class SingleMenuItemView(APIView,DenyUnsafeMethodsMixin):
+    permission_classes = [AllowAny]  # Allow access without authentication
+
+    def get(self, request, pk):
+        try:
+            item = MenuItem.objects.get(pk=pk) # Get the item
+        except ObjectDoesNotExist:
+            return Response({'message': "The item does not exist"}, status=status.HTTP_404_NOT_FOUND)
+
+        category_name = request.query_params.get('category')
+        to_price = request.query_params.get('to_price')
+        search = request.query_params.get('search')
+
+        if category_name:
+            item = item.filter(category__title=category_name)
+        if to_price:
+            item = item.filter(price__lte=to_price)
+        if search:
+            item = item.filter(title__icontains=search)
+
+        serializer = MenuItemSerializer(item)
+        return Response(serializer.data, status.HTTP_200_OK)
 
 
 
@@ -165,11 +164,6 @@ class RemoveGroupView(APIView):
         return Response({'message': "User not found in the managers group"}, status=status.HTTP_404_NOT_FOUND)
 
 
-
-# Custom permission to check if the user is in the 'Managers' group.
-class IsManager(BasePermission):
-    def has_permission(self, request, view):
-        return request.user.groups.filter(name='Managers').exists()
 
 
 
