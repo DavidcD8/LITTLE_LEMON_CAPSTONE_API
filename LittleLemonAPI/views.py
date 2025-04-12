@@ -37,7 +37,7 @@ class DenyUnsafeMethodsMixin:
 class IsManager(BasePermission):
     def has_permission(self, request, view):
         return request.user.groups.filter(name='Managers').exists()
- 
+
 
 
 #view to render menu items
@@ -70,7 +70,7 @@ class MenuItemListView(APIView,DenyUnsafeMethodsMixin):
 
 
 
-# Renders one item only
+# Renders one item only and acceps put and patch
 class SingleMenuItemView(APIView,DenyUnsafeMethodsMixin):
     permission_classes = [AllowAny]  # Allow access without authentication
 
@@ -93,6 +93,35 @@ class SingleMenuItemView(APIView,DenyUnsafeMethodsMixin):
 
         serializer = MenuItemSerializer(item)
         return Response(serializer.data, status.HTTP_200_OK)
+
+    def put(self, request, pk): # only managers and amin can use this
+        if IsManager().has_permission(request, self) or IsAdminUser().has_permission(request, self):
+            try:
+                item = MenuItem.objects.get(pk=pk)
+            except MenuItem.DoesNotExist:
+                return Response({"message": "Item not found."}, status=status.HTTP_404_NOT_FOUND)
+
+            serializer = MenuItemSerializer(item, data=request.data)
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data, status=status.HTTP_200_OK)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"detail": "You do not have permission to perform this action."}, status=status.HTTP_403_FORBIDDEN)
+
+
+    def patch(self, request, pk): # only managers and amin can use this
+        if IsManager().has_permission(request, self) or IsAdminUser().has_permission(request, self):
+            try:
+                item = MenuItem.objects.get(pk=pk)
+            except MenuItem.DoesNotExist:
+                return Response({"message": "Item not found."}, status=status.HTTP_404_NOT_FOUND)
+
+            serializer = MenuItemSerializer(item, data=request.data, partial=True)
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data, status=status.HTTP_200_OK)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"detail": "You do not have permission to perform this action."}, status=status.HTTP_403_FORBIDDEN)
 
 
 
