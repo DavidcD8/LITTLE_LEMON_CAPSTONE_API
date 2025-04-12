@@ -23,6 +23,34 @@ class CreateMenuItemView(APIView):
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
+
+# Renders one item only
+class SingleMenuItemView(APIView):
+    permission_classes = [AllowAny]  # Allow access without authentication
+
+    def get(self, request, pk):
+        try:
+            item = MenuItem.objects.get(pk=pk) # Get the item
+        except ObjectDoesNotExist:
+            return Response({'message': "The item does not exist"}, status=status.HTTP_404_NOT_FOUND)
+
+
+        category_name = request.query_params.get('category')
+        to_price = request.query_params.get('to_price')
+        search = request.query_params.get('search')
+
+        if category_name:
+            item = item.filter(category__title=category_name)
+        if to_price:
+            item = item.filter(price__lte=to_price)
+        if search:
+            item = item.filter(title__icontains=search)
+
+        serializer = MenuItemSerializer(item)
+        return Response(serializer.data, status.HTTP_200_OK)
+
+
+
 #view to render menu items
 class MenuItemListView(APIView):
     permission_classes = [AllowAny]  # Allow everyone to access this view
@@ -49,36 +77,35 @@ class MenuItemListView(APIView):
             status=status.HTTP_403_FORBIDDEN
         )
 
-    def put(self, request, *args, **kwargs):
+    def put(self, request):
         return Response(
             {"detail": "You do not have permission to perform this action."},
             status=status.HTTP_403_FORBIDDEN
         )
 
-    def patch(self, request, *args, **kwargs):
+    def patch(self, request):
         return Response(
             {"detail": "You do not have permission to perform this action."},
             status=status.HTTP_403_FORBIDDEN
         )
 
-    def delete(self, request, *args, **kwargs):
+    def delete(self, request):
         return Response(
             {"detail": "You do not have permission to perform this action."},
             status=status.HTTP_403_FORBIDDEN
         )
-
-
 
 
 
 # View to create categories
-class CreateCategory(generics.ListCreateAPIView):
+class CreateCategory(APIView):
     permission_classes = [IsAdminUser] # checks if the user is admin
     def post(self, request):
         serializer = CategorySerializer(data=request.data)
         if serializer.is_valid():
             serializer.save()
         return Response(serializer.data,status.HTTP_201_CREATED )
+
 
 
 # View to render categories
@@ -113,7 +140,7 @@ class AssignGroupView(APIView):
 
         # Add the user to the 'Managers' group if they are not already in it
         request.user.groups.add(manager_group)
-        return Response({'message': "User added to managers group"}, status=status.HTTP_201_CREATED) 
+        return Response({'message': "User added to managers group"}, status=status.HTTP_201_CREATED)
 
 
 
