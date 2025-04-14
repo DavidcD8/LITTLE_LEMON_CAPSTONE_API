@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import MenuItem , Category, Cart
+from .models import MenuItem, Category, Cart, Order, OrderItem
 
 class CategorySerializer(serializers.ModelSerializer):
     class Meta:
@@ -44,3 +44,20 @@ class CartSerializer(serializers.ModelSerializer):
             validated_data['price'] = total_price
 
             return super().create(validated_data)
+
+
+class OrderItemSerializer(serializers.ModelSerializer):
+    menuitem = MenuItemSerializer(read_only=True)
+
+    class Meta:
+        model = OrderItem
+        fields = ['menuitem', 'quantity', 'unit_price', 'price']
+
+
+
+class OrderSerializer(serializers.ModelSerializer):
+    orderitem_set = OrderItemSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Order
+        fields = ['id', 'user', 'delivery_crew', 'status', 'total', 'date', 'orderitem_set']
