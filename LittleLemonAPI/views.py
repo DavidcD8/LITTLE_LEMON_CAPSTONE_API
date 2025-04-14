@@ -8,10 +8,8 @@ from rest_framework.views import APIView, Response, status
 from rest_framework.permissions import IsAdminUser, AllowAny, IsAuthenticated
 from .models import MenuItem
 from .serializers import MenuItemSerializer, CategorySerializer,CartSerializer, OrderSerializer
-from django.core.exceptions import ObjectDoesNotExist
-from rest_framework.permissions import BasePermission
 from rest_framework import permissions
-
+from django.core.paginator import Paginator, EmptyPage
 
 
 #view to render menu items
@@ -23,6 +21,8 @@ class MenuItemListView(APIView):
         category_name = request.query_params.get('category')
         to_price = request.query_params.get('to_price')
         search = request.query_params.get('search')
+        perpage = request.query_params.get('perpage', 2)
+        page = request.query_params.get('page', 1)
 
         if category_name:
             items = items.filter(category__title=category_name)
@@ -31,6 +31,11 @@ class MenuItemListView(APIView):
         if search:
             items = items.filter(title__icontains=search)
 
+        paginator = Paginator(items, per_page=perpage)
+        try:
+            items = paginator.page(page)
+        except EmptyPage:
+            items = []
         serializer = MenuItemSerializer(items, many=True)
         return Response(serializer.data, status.HTTP_200_OK)
 
