@@ -4,12 +4,11 @@ from django.contrib.auth.models import Group, User
 from .models import Category, MenuItem, Cart, Order, OrderItem
 from rest_framework import generics
 from rest_framework.views import APIView, Response, status
-from rest_framework.permissions import IsAdminUser, AllowAny
+from rest_framework.permissions import IsAdminUser, AllowAny, IsAuthenticated
 from .models import MenuItem
-from .serializers import MenuItemSerializer, CategorySerializer
+from .serializers import MenuItemSerializer, CategorySerializer,CartSerializer
 from django.core.exceptions import ObjectDoesNotExist
 from rest_framework.permissions import BasePermission
-
 
 
 # view to prevent unwanted actions
@@ -284,3 +283,31 @@ class AssignDeliveryView(APIView):
             return Response({"message": "User removed from Delivery Crew."}, status=status.HTTP_200_OK)
 
         return Response({"message": "User not in Delivery Crew."}, status=status.HTTP_404_NOT_FOUND)
+
+
+# Cart view
+class CartView(APIView):
+    permission_classes = [IsAuthenticated]  # Ensure the user is authenticated
+
+    def get(self, request):
+        user = request.user  # Automatically retrieved from the token
+        cart_items = Cart.objects.filter(user=user)  # Fetch cart items for the authenticated user
+        serialized = CartSerializer(cart_items, many=True)  # Serialize the cart items
+        return Response(serialized.data, status=status.HTTP_200_OK)  # Return serialized data with 200 status
+
+
+    def post(self, request):
+        serializer = CartSerializer(data=request.data, context={'request': request})  # Inject user into serializer context
+        if serializer.is_valid():  # Check if the data is valid
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)  # Return serialized data with 201 status
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)  # Return errors with 400 status
+
+
+    def delete(self, request, item_id):
+        try:
+            item = Cart.objects.get(user=request.user, menuitem_id=item_id)
+            item.delete()
+            return Response({"message": "Item successfully deleted"}, status=status.HTTP_200_OK)
+        except Cart.DoesNotExist:
+            return Response({"error": "Item not found"}, status=status.HTTP_404_NOT_FOUND)
