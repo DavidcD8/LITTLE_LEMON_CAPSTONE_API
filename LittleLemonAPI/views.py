@@ -65,7 +65,7 @@ class SingleMenuItemView(APIView):
 
     def put(self, request, pk):
         # Restrict PUT access to Manager or Admin only
-        if request.user.groups.filter(name='Manager').exists() or request.user.is_superuser:
+        if request.user.groups.filter(name='Managers').exists() or request.user.is_superuser:
             try:
                 item = MenuItem.objects.get(pk=pk)  # Get the item to update
             except MenuItem.DoesNotExist:
@@ -81,7 +81,7 @@ class SingleMenuItemView(APIView):
 
     def patch(self, request, pk):
         # Restrict PATCH access to Manager or Admin only
-        if request.user.groups.filter(name='Manager').exists() or request.user.is_superuser:
+        if request.user.groups.filter(name='Managers').exists() or request.user.is_superuser:
             try:
                 item = MenuItem.objects.get(pk=pk)  # Get the item to update
             except MenuItem.DoesNotExist:
@@ -97,7 +97,7 @@ class SingleMenuItemView(APIView):
 
     def delete(self, request, pk):
         # Restrict DELETE access to Manager or Admin only
-        if request.user.groups.filter(name='Manager').exists() or request.user.is_superuser:
+        if request.user.groups.filter(name='Managers').exists() or request.user.is_superuser:
             try:
                 item = MenuItem.objects.get(pk=pk)  # Get the item to delete
             except MenuItem.DoesNotExist:
@@ -143,7 +143,7 @@ class ManagerGroupView(APIView):
     def get(self, request):
         user = request.user  # Get the current logged-in user
 
-        if not (user.groups.filter(name="Manager").exists() or user.is_superuser): # Check if the user is either a superuser (admin) or belongs to the 'Manager' group
+        if not (user.groups.filter(name="Managers").exists() or user.is_superuser): # Check if the user is either a superuser (admin) or belongs to the 'Manager' group
             return Response({"detail": "You do not have permission to view this."}, status=status.HTTP_403_FORBIDDEN)  # If not authorized, return 403 Forbidden
         try:
             manager_group = Group.objects.get(name="Managers")  # Try to get the 'Managers' group
@@ -157,7 +157,7 @@ class ManagerGroupView(APIView):
     def post(self, request):
         user = request.user  # Get the current logged-in user
 
-        if not (user.groups.filter(name="Manager").exists() or user.is_superuser):  # Only allow superusers or managers to add users to the group
+        if not (user.groups.filter(name="Managers").exists() or user.is_superuser):  # Only allow superusers or managers to add users to the group
             return Response({"detail": "You do not have permission to add users."}, status=status.HTTP_403_FORBIDDEN)
         user_id = request.data.get("user_id")  # Extract the user_id from the request body
         if not user_id:
@@ -206,7 +206,7 @@ class ManagerGroupView(APIView):
 class AssignDeliveryView(APIView):
     def get(self, request):
         # Restrict GET to Manager or Admin only
-        if not (request.user.groups.filter(name='Manager').exists() or request.user.is_superuser):
+        if not (request.user.groups.filter(name='Managers').exists() or request.user.is_superuser):
             return Response({"detail": "You do not have permission to view this."}, status=status.HTTP_403_FORBIDDEN)
 
         try:
@@ -303,15 +303,21 @@ class OrderListView(APIView):
     def get(self, request):
         user = request.user
 
-        # Check if user is Manager or Admin using built-in permissions
-        if user.groups.filter(name='Manager').exists() or user.is_superuser:
+        if user.groups.filter(name="Managers").exists() or user.is_superuser:
+            # Managers can see all orders (with or without delivery crew)
             orders = Order.objects.all().order_by('-date')
+
+        elif user.groups.filter(name="Delivery Crew").exists():
+            # Delivery crews can only see orders assigned to them
+            orders = Order.objects.filter(delivery_crew=user).order_by('-date')
+
         else:
+            # Customers (non-Manager and non-DeliveryCrew) can only see their own orders
             orders = Order.objects.filter(user=user).order_by('-date')
 
+        # Serialize the orders and return them
         serializer = OrderSerializer(orders, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
-
 
 
     def post(self, request):
@@ -354,6 +360,105 @@ class OrderListView(APIView):
         return Response({"message": "Order placed", "order_id": order.id}, status=201)
 
 
+    def put(self, request, pk):
+        # Ensure that the user is a Manager or Admin
+        if not (request.user.groups.filter(name='Managers').exists() or request.user.is_superuser):
+            return Response({"detail": "You do not have permission to edit this order."}, status=status.HTTP_403_FORBIDDEN)
+
+        # Try to get the order from the database
+        try:
+            order = Order.objects.get(pk=pk)
+        except Order.DoesNotExist:
+            return Response({"detail": "Order not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        # Get the delivery crew user ID from the request data (if any)
+        delivery_crew_id = request.data.get('Delivery Crew')
+
+        # If a delivery crew ID is provided, assign the user to the order
+        if delivery_crew_id:
+            try:
+                delivery_crew = User.objects.get(pk=delivery_crew_id)
+                # Ensure the selected user is in the 'DeliveryCrew' group
+                if not delivery_crew.groups.filter(name="Delivery Crew").exists():
+                    return Response({"error": "The selected user is not in the Delivery Crew group."}, status=status.HTTP_400_BAD_REQUEST)
+
+                order.delivery_crew = delivery_crew  # Assign the delivery crew to the order
+
+            except User.DoesNotExist:
+                return Response({"detail": "The specified delivery crew user does not exist."}, status=status.HTTP_404_NOT_FOUND)
+
+        # Update order with any other fields in the request data
+        serializer = OrderSerializer(order, data=request.data)
+        if serializer.is_valid():
+            serializer.save()  # Save the updated order
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
+        # If serializer validation fails, return errors
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+    def patch(self, request, pk):
+        user = request.user
+
+        try:
+            order = Order.objects.get(pk=pk)
+        except Order.DoesNotExist:
+            return Response({"detail": "Order not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        # === MANAGER / ADMIN ===
+        if user.groups.filter(name='Managers').exists() or user.is_superuser:
+            # Managers can update any field partially
+            serializer = OrderSerializer(order, data=request.data, partial=True)
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data, status=status.HTTP_200_OK)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        # === DELIVERY CREW ===
+        elif user.groups.filter(name='Delivery Crew').exists():
+            # Delivery Crew can only update 'status' on their assigned orders
+            if order.delivery_crew != user:
+                return Response({"detail": "This order is not assigned to you."}, status=status.HTTP_403_FORBIDDEN)
+
+            # Only 'status' field should be allowed
+            if 'status' not in request.data:
+                return Response({"detail": "Missing 'status' field."}, status=status.HTTP_400_BAD_REQUEST)
+
+            # Must not try to update other fields
+            if set(request.data.keys()) != {'status'}:
+                return Response({"detail": "You can only update the 'status' field."}, status=status.HTTP_400_BAD_REQUEST)
+
+            # Validate the value of status
+            status_value = request.data['status']
+            if status_value not in [0, 1, True, False]:
+                return Response({"detail": "Status must be 0 or 1."}, status=status.HTTP_400_BAD_REQUEST)
+
+            # Update and save
+            order.status = bool(status_value)
+            order.save()
+            return Response({"detail": "Order status updated."}, status=status.HTTP_200_OK)
+
+        # === CUSTOMERS ===
+        else:
+            return Response({"detail": "You do not have permission to edit this order."}, status=status.HTTP_403_FORBIDDEN)
+
+
+
+    def delete(self, request, pk):
+        if not (request.user.groups.filter(name='Managers').exists() or request.user.is_superuser): # Restrict DELETE access to Manager or Admin only
+            return Response({"detail": "You do not have permission to edit this order."}, status=status.HTTP_403_FORBIDDEN)
+
+        try:
+            order = Order.objects.get(pk=pk)  # Get the order to delete
+            order.delete()  # Delete the order
+            return Response({"message": "Order successfully deleted"}, status=status.HTTP_200_OK)
+        except Order.DoesNotExist:
+            return Response({"detail": "Order not found."}, status=status.HTTP_404_NOT_FOUND)
+
+
+
+
+
 # retrieves order
 class OrderDetailView(APIView):
     permission_classes = [IsAuthenticated]
@@ -383,3 +488,5 @@ class OrderDetailView(APIView):
             ]
         }
         return Response(data, status=status.HTTP_200_OK)
+
+
