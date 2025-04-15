@@ -10,18 +10,21 @@ from .models import MenuItem
 from .serializers import MenuItemSerializer, CategorySerializer,CartSerializer, OrderSerializer
 from rest_framework import permissions
 from django.core.paginator import Paginator, EmptyPage
-
+from rest_framework.throttling import UserRateThrottle, AnonRateThrottle
+from .throttles import TenCallsPerMinute  # import your throttle
 
 #view to render menu items
 class MenuItemListView(APIView):
     permission_classes = [permissions.AllowAny]  # Allow everyone to access this view
+    throttle_classes = [TenCallsPerMinute]
 
     def get(self, request):
         items = MenuItem.objects.all()
         category_name = request.query_params.get('category')
         to_price = request.query_params.get('to_price')
         search = request.query_params.get('search')
-        perpage = request.query_params.get('perpage', 2)
+        ordering = request.query_params.get('ordering')
+        perpage = request.query_params.get('perpage', 10)
         page = request.query_params.get('page', 1)
 
         if category_name:
@@ -30,14 +33,20 @@ class MenuItemListView(APIView):
             items = items.filter(price__lte=to_price)
         if search:
             items = items.filter(title__icontains=search)
-
+        if ordering:
+            ordering_fields = ordering.split(",")
+            items = items.order_by(*ordering_fields)
         paginator = Paginator(items, per_page=perpage)
         try:
             items = paginator.page(page)
         except EmptyPage:
             items = []
+
+
         serializer = MenuItemSerializer(items, many=True)
+
         return Response(serializer.data, status.HTTP_200_OK)
+
 
     def post(self, request):
         # Restrict POST to Manager or Admin only
@@ -53,10 +62,10 @@ class MenuItemListView(APIView):
 
 
 
-
 # Renders one item only and acceps put and patch
 class SingleMenuItemView(APIView):
     permission_classes = [permissions.AllowAny]  # Allow access without authentication for GET
+    throttle_classes = [TenCallsPerMinute]
 
     def get(self, request, pk):
         try:
@@ -117,6 +126,7 @@ class SingleMenuItemView(APIView):
 
 # View to create categories
 class CreateCategory(APIView):
+    throttle_classes = [TenCallsPerMinute]
     permission_classes = [IsAdminUser] # checks if the user is admin
     def post(self, request):
         serializer = CategorySerializer(data=request.data)
@@ -129,6 +139,7 @@ class CreateCategory(APIView):
 # View to render categories
 class CategoryListView(APIView):
     permission_classes = [AllowAny]  # Allow any user to access this view
+    throttle_classes = [TenCallsPerMinute]
 
     def get(self, request):
         categories = Category.objects.all()  # Fetch all categories
@@ -143,7 +154,7 @@ class CategoryListView(APIView):
 # view to add user to Managers group
 class ManagerGroupView(APIView):
     permission_classes = [IsAuthenticated] # Only allow authenticated users to access this view
-
+    throttle_classes = [TenCallsPerMinute]
 
     def get(self, request):
         user = request.user  # Get the current logged-in user
@@ -209,6 +220,8 @@ class ManagerGroupView(APIView):
 
 # view to add user to delivery group by manager or admin
 class AssignDeliveryView(APIView):
+    throttle_classes = [TenCallsPerMinute]
+
     def get(self, request):
         # Restrict GET to Manager or Admin only
         if not (request.user.groups.filter(name='Managers').exists() or request.user.is_superuser):
@@ -275,6 +288,7 @@ class AssignDeliveryView(APIView):
 # Cart view
 class CartView(APIView):
     permission_classes = [IsAuthenticated]  # Ensure the user is authenticated
+    throttle_classes = [TenCallsPerMinute]
 
     def get(self, request):
         user = request.user  # Retrieves authentcated user from the token
@@ -304,6 +318,7 @@ class CartView(APIView):
 # Order view
 class OrderListView(APIView):
     permission_classes = [IsAuthenticated]
+    throttle_classes = [TenCallsPerMinute]
 
     def get(self, request):
         user = request.user
@@ -467,6 +482,7 @@ class OrderListView(APIView):
 # retrieves order
 class OrderDetailView(APIView):
     permission_classes = [IsAuthenticated]
+    throttle_classes = [TenCallsPerMinute]
 
     def get(self, request, order_id):
         try:
