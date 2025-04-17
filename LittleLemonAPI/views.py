@@ -5,123 +5,45 @@ from django.contrib.auth.models import Group, User
 from .models import Category, MenuItem, Cart, Order, OrderItem
 from rest_framework import generics
 from rest_framework.views import APIView, Response, status
-from rest_framework.permissions import IsAdminUser, AllowAny, IsAuthenticated
+from rest_framework.permissions import IsAdminUser, AllowAny, IsAuthenticated,BasePermission
 from .models import MenuItem
 from .serializers import MenuItemSerializer, CategorySerializer,CartSerializer, OrderSerializer
 from rest_framework import permissions
 from django.core.paginator import Paginator, EmptyPage
 from rest_framework.throttling import UserRateThrottle, AnonRateThrottle
+from rest_framework.permissions import IsAuthenticated
 from .throttles import TenCallsPerMinute  # import your throttle
 
+
+# Custom permission class
+class GetPermission(BasePermission):
+    def has_permission(self, request, view):
+        # Allow GET requests to everyone
+        if request.method == 'GET':
+            return True
+        
+        # Only allow POST if the user is authenticated and either a Manager or Admin
+        user = request.user # Gets the logged in user
+        return user.is_authenticated and (user.groups.filter(name="Managers").exists() or user.is_superuser)
+
+
+
 #view to render menu items
-class MenuItemListView(APIView):
-    permission_classes = [permissions.AllowAny]  # Allow everyone to access this view
-    throttle_classes = [TenCallsPerMinute]
-
-    def get(self, request):
-        items = MenuItem.objects.all()
-        category_name = request.query_params.get('category')
-        to_price = request.query_params.get('to_price')
-        search = request.query_params.get('search')
-        ordering = request.query_params.get('ordering')
-        perpage = request.query_params.get('perpage', 10)
-        page = request.query_params.get('page', 1)
-
-        if category_name:
-            items = items.filter(category__title=category_name)
-        if to_price:
-            items = items.filter(price__lte=to_price)
-        if search:
-            items = items.filter(title__icontains=search)
-        if ordering:
-            ordering_fields = ordering.split(",")
-            items = items.order_by(*ordering_fields)
-        paginator = Paginator(items, per_page=perpage)
-        try:
-            items = paginator.page(page)
-        except EmptyPage:
-            items = []
+class MenuItemsView(generics.ListCreateAPIView):
+    queryset = MenuItem.objects.all()
+    serializer_class = MenuItemSerializer
+    search_fields = ['category__title']
+    ordering_fields = ['price', 'inventory']
+    permission_classes = [GetPermission]
 
 
-        serializer = MenuItemSerializer(items, many=True)
-
-        return Response(serializer.data, status.HTTP_200_OK)
-
-
-    def post(self, request):
-        # Restrict POST to Manager or Admin only
-        if request.user.groups.filter(name='Manager').exists() or request.user.is_superuser:
-            serializer = MenuItemSerializer(data=request.data)
-            if serializer.is_valid():
-                serializer.save()
-                return Response(serializer.data, status=status.HTTP_201_CREATED)
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-        return Response({"detail": "You do not have permission to perform this action."}, status=status.HTTP_403_FORBIDDEN)
-
-
-
-
-# Renders one item only and acceps put and patch
-class SingleMenuItemView(APIView):
-    permission_classes = [permissions.AllowAny]  # Allow access without authentication for GET
-    throttle_classes = [TenCallsPerMinute]
-
-    def get(self, request, pk):
-        try:
-            item = MenuItem.objects.get(pk=pk)  # Get the item by primary key
-        except MenuItem.DoesNotExist:
-            return Response({'message': "The item does not exist"}, status=status.HTTP_404_NOT_FOUND)
-
-        # Serialize the item
-        serializer = MenuItemSerializer(item)
-        return Response(serializer.data, status=status.HTTP_200_OK)
-
-    def put(self, request, pk):
-        # Restrict PUT access to Manager or Admin only
-        if request.user.groups.filter(name='Managers').exists() or request.user.is_superuser:
-            try:
-                item = MenuItem.objects.get(pk=pk)  # Get the item to update
-            except MenuItem.DoesNotExist:
-                return Response({"message": "Item not found."}, status=status.HTTP_404_NOT_FOUND)
-
-            serializer = MenuItemSerializer(item, data=request.data)
-            if serializer.is_valid():
-                serializer.save()  # Save the updated item
-                return Response(serializer.data, status=status.HTTP_200_OK)
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-        return Response({"detail": "You do not have permission to perform this action."}, status=status.HTTP_403_FORBIDDEN)
-
-    def patch(self, request, pk):
-        # Restrict PATCH access to Manager or Admin only
-        if request.user.groups.filter(name='Managers').exists() or request.user.is_superuser:
-            try:
-                item = MenuItem.objects.get(pk=pk)  # Get the item to update
-            except MenuItem.DoesNotExist:
-                return Response({"message": "Item not found."}, status=status.HTTP_404_NOT_FOUND)
-
-            serializer = MenuItemSerializer(item, data=request.data, partial=True)  # Allow partial updates
-            if serializer.is_valid():
-                serializer.save()  # Save the updated item
-                return Response(serializer.data, status=status.HTTP_200_OK)
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-        return Response({"detail": "You do not have permission to perform this action."}, status=status.HTTP_403_FORBIDDEN)
-
-    def delete(self, request, pk):
-        # Restrict DELETE access to Manager or Admin only
-        if request.user.groups.filter(name='Managers').exists() or request.user.is_superuser:
-            try:
-                item = MenuItem.objects.get(pk=pk)  # Get the item to delete
-            except MenuItem.DoesNotExist:
-                return Response({"message": "Item not found."}, status=status.HTTP_404_NOT_FOUND)
-
-            item.delete()  # Delete the item
-            return Response({"message": "Item deleted successfully."}, status=status.HTTP_200_OK)
-
-        return Response({"detail": "You do not have permission to perform this action."}, status=status.HTTP_403_FORBIDDEN)
-
+ 
+# Single view to update 
+class SingleItemView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = MenuItem.objects.all()
+    serializer_class = MenuItemSerializer
+    permission_classes = [GetPermission]
+ 
 
 
 # View to create categories
